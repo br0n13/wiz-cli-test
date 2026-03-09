@@ -1,0 +1,32 @@
+name: Webhook Listener Router
+
+on:
+  repository_dispatch:
+    types: [wiz-pr-scan, wiz-vm-scan]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  route-pr-scan:
+    if: ${{ github.event.action == 'wiz-pr-scan' }}
+    uses: ./.github/workflows/wiz-scan.yml
+    secrets: inherit
+    with:
+      target_owner: ${{ github.event.client_payload.target_owner }}
+      target_repo: ${{ github.event.client_payload.target_repo }}
+      target_pr: ${{ github.event.client_payload.pr_number }}
+      target_head_sha: ${{ github.event.client_payload.head_sha }}
+      target_base_sha: ${{ github.event.client_payload.base_sha }}
+
+  route-vm-scan:
+    if: ${{ github.event.action == 'wiz-vm-scan' }}
+    uses: ./.github/workflows/vm-scan.yml
+    secrets: inherit
+    with:
+      target_owner: ${{ github.event.client_payload.target_owner }}
+      target_repo: ${{ github.event.client_payload.target_repo }}
+      target_pr: ${{ github.event.client_payload.pr_number }}
+      vm_identifier: ${{ github.event.client_payload.vm_identifier }}
