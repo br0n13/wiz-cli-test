@@ -1,0 +1,16 @@
+# Node dependencies
+node_modules/
+
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+
+# Local environment/config
+.env
+.env.*
+!.env.example
+
+# OS/editor artifacts
+.DS_Store
+.vscode/
+.idea/

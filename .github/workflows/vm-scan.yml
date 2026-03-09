@@ -1,0 +1,54 @@
+name: VM Scan
+
+on:
+  workflow_call:
+    inputs:
+      target_owner:
+        required: true
+        type: string
+      target_repo:
+        required: true
+        type: string
+      target_pr:
+        required: true
+        type: string
+      vm_identifier:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  vm-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Wiz CLI
+        run: |
+          curl -fsSL https://downloads.wiz.io/wizcli/install.sh | bash
+          echo "$HOME/.wiz/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate Wiz CLI
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        run: |
+          wizcli auth --id "$WIZ_CLIENT_ID" --secret "$WIZ_CLIENT_SECRET"
+
+      - name: Run VM scan
+        run: |
+          echo "Run VM scan for '${{ inputs.vm_identifier }}'"
+          echo "Replace this command with your preferred Wiz VM scan invocation for your environment."
+
+      - name: Comment on pull request
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.CENTRAL_CHECKOUT_TOKEN }}
+          repository: ${{ inputs.target_owner }}/${{ inputs.target_repo }}
+          issue-number: ${{ inputs.target_pr }}
+          body: |
+            ### Wiz VM Scan Triggered
+            VM identifier: `${{ inputs.vm_identifier }}`
+
+            This workflow is intentionally separated from `wiz-scan.yml` so VM-specific logic can evolve independently.

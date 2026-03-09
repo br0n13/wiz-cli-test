@@ -1,0 +1,112 @@
+name: Wiz PR Scan
+
+on:
+  workflow_call:
+    inputs:
+      target_owner:
+        required: true
+        type: string
+      target_repo:
+        required: true
+        type: string
+      target_pr:
+        required: true
+        type: string
+      target_head_sha:
+        required: true
+        type: string
+      target_base_sha:
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  wiz-scan:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_OWNER: ${{ inputs.target_owner }}
+      TARGET_REPO: ${{ inputs.target_repo }}
+      TARGET_PR: ${{ inputs.target_pr }}
+      TARGET_HEAD_SHA: ${{ inputs.target_head_sha }}
+      TARGET_BASE_SHA: ${{ inputs.target_base_sha }}
+    steps:
+      - name: Create short run metadata
+        run: |
+          echo "REPO_SLUG=${TARGET_OWNER}-${TARGET_REPO}" >> "$GITHUB_ENV"
+
+      - name: Checkout central workflow repo
+        uses: actions/checkout@v4
+        with:
+          path: central
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TARGET_OWNER }}/${{ env.TARGET_REPO }}
+          ref: ${{ env.TARGET_HEAD_SHA }}
+          token: ${{ secrets.CENTRAL_CHECKOUT_TOKEN }}
+          path: target
+
+      - name: Install Wiz CLI
+        run: |
+          curl -fsSL https://downloads.wiz.io/wizcli/install.sh | bash
+          echo "$HOME/.wiz/bin" >> "$GITHUB_PATH"
+
+      - name: Run current scan
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        run: |
+          wizcli auth --id "$WIZ_CLIENT_ID" --secret "$WIZ_CLIENT_SECRET"
+          wizcli scan dir ./target --format json --output ./target/scan-current.json
+
+      - name: Download previous baseline (if available)
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: wiz-scan.yml
+          name: baseline-${{ env.REPO_SLUG }}-pr-${{ env.TARGET_PR }}
+          path: ./baseline
+
+      - name: Build differential report
+        id: differential
+        run: |
+          if [ -f ./baseline/scan-current.json ]; then
+            python3 central/scripts/diff_wiz_results.py ./baseline/scan-current.json ./target/scan-current.json ./target/scan-diff.json
+            echo "has_baseline=true" >> "$GITHUB_OUTPUT"
+          else
+            echo '{"new_count": 0, "new_findings": []}' > ./target/scan-diff.json
+            echo "has_baseline=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload baseline artifact for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-${{ env.REPO_SLUG }}-pr-${{ env.TARGET_PR }}
+          path: ./target/scan-current.json
+          retention-days: 14
+
+      - name: Summarize
+        id: summary
+        run: |
+          NEW_COUNT=$(jq -r '.new_count' ./target/scan-diff.json)
+          echo "new_count=$NEW_COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on pull request
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.CENTRAL_CHECKOUT_TOKEN }}
+          repository: ${{ env.TARGET_OWNER }}/${{ env.TARGET_REPO }}
+          issue-number: ${{ env.TARGET_PR }}
+          body: |
+            ### Wiz Centralized Scan Result
+            * Baseline found: `${{ steps.differential.outputs.has_baseline }}`
+            * New vulnerabilities: `${{ steps.summary.outputs.new_count }}`
+            * Scanned commit: `${{ env.TARGET_HEAD_SHA }}`
+
+            Artifacts available in `${{ github.repository }}` workflow run `${{ github.run_id }}`.
