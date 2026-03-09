@@ -1,28 +1,19 @@
 # Centralized Wiz CLI PR Vulnerability Scanning
 
-This repository contains a reference implementation for centralized Wiz CLI scanning driven by GitHub App webhook events.
-
-## Should this be split into multiple workflows?
-
-Yes. Splitting improves separation of concerns and makes maintenance easier:
-
-- `webhook-listener.yml`: routes incoming `repository_dispatch` events to the correct scan workflow.
-- `wiz-scan.yml`: PR source scan + baseline/differential logic.
-- `vm-scan.yml`: VM-specific scan path (independent lifecycle).
+This repository contains a reference implementation for centralized Wiz CLI scanning that is driven by a GitHub App webhook listener.
 
 ## Flow
 
-1. A GitHub App receives pull request webhook events (`opened`, `reopened`, `synchronize`, `ready_for_review`).
-2. The webhook service dispatches `repository_dispatch` (`wiz-pr-scan`) to this repository.
-3. `webhook-listener.yml` routes to `wiz-scan.yml`.
-4. `wiz-scan.yml` checks out the target PR commit, runs `wizcli`, downloads baseline, and computes differential results.
-5. The latest scan is uploaded as the next baseline and a summary comment is posted to the target PR.
+1. A GitHub App receives `pull_request` webhook events (`opened`, `reopened`, `synchronize`, `ready_for_review`).
+2. The webhook service dispatches a `repository_dispatch` event (`wiz-pr-scan`) to this repository.
+3. The centralized workflow checks out the target PR commit and runs `wizcli` scan.
+4. The workflow downloads the previous scan artifact for the same PR as a baseline.
+5. A differential report is generated to identify newly introduced vulnerabilities.
+6. The workflow uploads the latest scan as the next baseline and comments summary results on the target PR.
 
 ## Files
 
-- `.github/workflows/webhook-listener.yml`: event router for `wiz-pr-scan` and `wiz-vm-scan`.
-- `.github/workflows/wiz-scan.yml`: reusable workflow for PR code scanning and diff.
-- `.github/workflows/vm-scan.yml`: reusable workflow for VM-oriented scan orchestration.
+- `.github/workflows/wiz-centralized-pr-scan.yml`: central workflow that performs scan + differential logic.
 - `app/github-webhook-dispatcher.mjs`: webhook listener that dispatches `wiz-pr-scan` events.
 - `scripts/diff_wiz_results.py`: compares baseline and current scan JSON outputs.
 
